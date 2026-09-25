@@ -57,8 +57,10 @@ internal static class Program
                 case "preprocess":
                     return PreprocessCommand.Run(command, output);
 
-                // The remaining commands arrive with phases F3 and F5 (SPEC §10).
                 case "run":
+                    return RunCommand.Run(command, output);
+
+                // The render command arrives with phase F5 (SPEC §10).
                 case "render":
                     error.WriteLine($"escherize: the command '{command.Command}' is not implemented yet.");
                     return ExitInvalidInput;
