@@ -150,7 +150,7 @@ public static class TemplateValidator
                 worstEdgeError);
         }
 
-        return CheckTiling(layout, tile, seed, worstEdgeError);
+        return CheckNeighbourhood(layout, tile, TileIsometries.Build(layout, tile), seed, worstEdgeError);
     }
 
     /// <summary>
@@ -159,13 +159,19 @@ public static class TemplateValidator
     /// </summary>
     /// <param name="layout">The layout.</param>
     /// <param name="tile">The tile.</param>
+    /// <param name="isometries">
+    /// The neighbour isometries of this tile, or null to build them from the outline. A
+    /// tile that has been turned, as a search result is, must pass its own: a glide
+    /// relation is stated against a fixed axis, so rebuilding it from turned points gives
+    /// the wrong map.
+    /// </param>
     /// <returns>The largest deviation.</returns>
-    public static double CheckEdgeCoverage(TileLayout layout, Vec2[] tile)
+    public static double CheckEdgeCoverage(TileLayout layout, Vec2[] tile, Isometry[]? isometries = null)
     {
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(tile);
 
-        Isometry[] isometries = TileIsometries.Build(layout, tile);
+        isometries ??= TileIsometries.Build(layout, tile);
         int[] partners = TileIsometries.PartnerEdges(layout.Template);
         double worst = 0;
 
@@ -192,21 +198,73 @@ public static class TemplateValidator
     }
 
     /// <summary>
-    /// Grows a patch and checks that every sample point away from the boundaries lies in
-    /// exactly one tile (SPEC §8.2 step 4).
+    /// Checks a tile that already exists, rather than generating one. This is what proves
+    /// that a particular search result really tiles the plane, which matters before it is
+    /// committed to material.
     /// </summary>
+    /// <param name="layout">The layout the tile belongs to.</param>
+    /// <param name="tile">The tile points, in boundary order.</param>
+    /// <param name="isometries">The neighbour isometries belonging to this tile.</param>
+    /// <param name="seed">The random seed for the sample points.</param>
+    /// <returns>The result, covering both the edge coverage and the covering test.</returns>
+    public static TemplateValidationResult ValidateTile(
+        TileLayout layout,
+        Vec2[] tile,
+        Isometry[] isometries,
+        int seed = 1)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+        ArgumentNullException.ThrowIfNull(tile);
+        ArgumentNullException.ThrowIfNull(isometries);
+
+        if (PolygonQuality.SelfIntersects(tile))
+        {
+            return TemplateValidationResult.Fail("The tile outline crosses itself.");
+        }
+
+        double worstEdgeError = CheckEdgeCoverage(layout, tile, isometries);
+        if (!(worstEdgeError <= EdgeCoverageTolerance))
+        {
+            return new TemplateValidationResult(
+                false,
+                string.Create(CultureInfo.InvariantCulture, $"Edge coverage is off by {worstEdgeError:0.###e+00}."),
+                0,
+                worstEdgeError);
+        }
+
+        return CheckNeighbourhood(layout, tile, isometries, seed, worstEdgeError);
+    }
+
+    /// <summary>
+    /// Grows a patch and checks that it is a tiling: no two tiles overlap, and every edge
+    /// of an interior tile is shared with exactly one neighbour.
+    /// </summary>
+    /// <remarks>
+    /// SPEC §8.2 samples a disc of twice the tile radius and asks for exactly one covering
+    /// tile. That suits the roughly round tiles validation generates, but not a tile fitted
+    /// to a long thin goal: its radius is half its length, while the patch grows along its
+    /// axis, so the disc reaches past the patch and every point out there looks like a hole.
+    /// The two halves of the question are therefore asked separately, and neither depends
+    /// on how far the patch happens to reach. An overlap is found by sampling, and cannot
+    /// be an artefact: if two tiles cover one point, the tiling is broken. A gap is found
+    /// by counting edges instead, on the argument that closes a surface: if every edge of
+    /// every tile that has its full neighbourhood is shared with exactly one other tile,
+    /// there is nowhere for a gap to be.
+    /// </remarks>
     /// <param name="layout">The layout.</param>
     /// <param name="tile">The tile.</param>
+    /// <param name="isometries">The neighbour isometries of this tile.</param>
     /// <param name="seed">The random seed for the sample points.</param>
     /// <param name="worstEdgeError">The edge coverage error, carried into the result.</param>
     /// <returns>The result.</returns>
-    private static TemplateValidationResult CheckTiling(
+    private static TemplateValidationResult CheckNeighbourhood(
         TileLayout layout,
         Vec2[] tile,
+        Isometry[] isometries,
         int seed,
         double worstEdgeError)
     {
-        List<PlacedTile> patch = TilingPatch.Grow(layout, tile, PatchDepth);
+        List<PlacedTile> patch = TilingPatch.Grow(tile, isometries, PatchDepth);
         if (patch.Count < 2)
         {
             return new TemplateValidationResult(false, "The patch has no neighbours.", patch.Count, worstEdgeError);
@@ -214,40 +272,100 @@ public static class TemplateValidator
 
         double diameter = PolygonOps.Diameter(tile);
         double tolerance = BoundaryToleranceFraction * diameter;
+        double quantum = 1e-6 * diameter;
 
-        Vec2 centre = PolygonOps.PointAverage(tile);
-        double tileRadius = 0;
-        foreach (Vec2 point in tile)
+        // Every tiling edge of every tile, keyed by its two endpoints so that the two
+        // tiles meeting along it produce the same key.
+        var uses = new Dictionary<(long, long, long, long), int>();
+        foreach (PlacedTile placed in patch)
         {
-            tileRadius = Math.Max(tileRadius, point.DistanceTo(centre));
+            for (int s = 0; s < layout.VertexCount; s++)
+            {
+                Vec2 a = placed.Points[layout.EdgePointIndex(s, 0)];
+                Vec2 b = placed.Points[layout.EdgePointIndex(s, layout.EdgeK(s) + 1)];
+                (long, long, long, long) key = EdgeKey(a, b, quantum);
+                uses[key] = uses.GetValueOrDefault(key) + 1;
+            }
         }
 
-        double sampleRadius = 2.0 * tileRadius;
-        var random = new Random(seed + 7919);
-        var candidates = new List<PlacedTile>(8);
-
-        for (int sample = 0; sample < SampleCount; sample++)
+        // A tile whose every edge is shared has its full neighbourhood inside the patch;
+        // those are the ones that can say anything about gaps.
+        int interior = 0;
+        foreach (PlacedTile placed in patch)
         {
-            // Uniform over the disc: the radius uses a square root so the area is even.
-            double angle = 2 * Math.PI * random.NextDouble();
-            double radius = sampleRadius * Math.Sqrt(random.NextDouble());
-            var point = new Vec2(centre.X + (radius * Math.Cos(angle)), centre.Y + (radius * Math.Sin(angle)));
-
-            candidates.Clear();
-            foreach (PlacedTile placed in patch)
+            bool complete = true;
+            for (int s = 0; s < layout.VertexCount && complete; s++)
             {
-                if (placed.BoxContains(point, tolerance))
+                Vec2 a = placed.Points[layout.EdgePointIndex(s, 0)];
+                Vec2 b = placed.Points[layout.EdgePointIndex(s, layout.EdgeK(s) + 1)];
+                int count = uses[EdgeKey(a, b, quantum)];
+
+                if (count > 2)
                 {
-                    candidates.Add(placed);
+                    return new TemplateValidationResult(
+                        false,
+                        string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"An edge is shared by {count} tiles, so the tiling folds onto itself."),
+                        patch.Count,
+                        worstEdgeError);
                 }
+
+                complete = count == 2;
             }
 
-            // A tile whose boundary passes within the tolerance also has the point inside
-            // its grown box, so the near boundary test only needs the candidates.
-            bool nearBoundary = false;
-            int covering = 0;
-            foreach (PlacedTile placed in candidates)
+            if (complete)
             {
+                interior++;
+            }
+        }
+
+        if (interior == 0)
+        {
+            return new TemplateValidationResult(
+                false,
+                "No tile in the patch has a complete ring of neighbours.",
+                patch.Count,
+                worstEdgeError);
+        }
+
+        // Overlaps: sampled over the base tile and the ring around it. Two tiles covering
+        // one point is a fault whatever the patch looks like.
+        double minX = double.PositiveInfinity;
+        double maxX = double.NegativeInfinity;
+        double minY = double.PositiveInfinity;
+        double maxY = double.NegativeInfinity;
+        foreach (Vec2 point in tile)
+        {
+            minX = Math.Min(minX, point.X);
+            maxX = Math.Max(maxX, point.X);
+            minY = Math.Min(minY, point.Y);
+            maxY = Math.Max(maxY, point.Y);
+        }
+
+        double marginX = 0.5 * (maxX - minX);
+        double marginY = 0.5 * (maxY - minY);
+        minX -= marginX;
+        maxX += marginX;
+        minY -= marginY;
+        maxY += marginY;
+
+        var random = new Random(seed + 7919);
+        for (int sample = 0; sample < SampleCount; sample++)
+        {
+            var point = new Vec2(
+                minX + (random.NextDouble() * (maxX - minX)),
+                minY + (random.NextDouble() * (maxY - minY)));
+
+            int covering = 0;
+            bool nearBoundary = false;
+            foreach (PlacedTile placed in patch)
+            {
+                if (!placed.BoxContains(point, tolerance))
+                {
+                    continue;
+                }
+
                 if (PolygonQuality.DistanceToBoundary(placed.Points, point) <= tolerance)
                 {
                     nearBoundary = true;
@@ -260,25 +378,37 @@ public static class TemplateValidator
                 }
             }
 
-            if (nearBoundary)
+            if (!nearBoundary && covering > 1)
             {
-                continue;
-            }
-
-            if (covering != 1)
-            {
-                string what = covering == 0 ? "no tile" : $"{covering} tiles";
                 return new TemplateValidationResult(
                     false,
                     string.Create(
                         CultureInfo.InvariantCulture,
-                        $"Sample {sample} at ({point.X:0.####}, {point.Y:0.####}) lies in {what}."),
+                        $"Sample {sample} at ({point.X:0.####}, {point.Y:0.####}) lies in {covering} tiles."),
                     patch.Count,
                     worstEdgeError);
             }
         }
 
-        return new TemplateValidationResult(true, string.Empty, patch.Count, worstEdgeError);
+        return new TemplateValidationResult(true, string.Empty, interior, worstEdgeError);
+    }
+
+    /// <summary>
+    /// A key for one tiling edge, the same from either of the two tiles that meet along it.
+    /// </summary>
+    /// <param name="a">One endpoint.</param>
+    /// <param name="b">The other endpoint.</param>
+    /// <param name="quantum">The rounding step.</param>
+    /// <returns>The key.</returns>
+    private static (long, long, long, long) EdgeKey(Vec2 a, Vec2 b, double quantum)
+    {
+        long ax = (long)Math.Round(a.X / quantum);
+        long ay = (long)Math.Round(a.Y / quantum);
+        long bx = (long)Math.Round(b.X / quantum);
+        long by = (long)Math.Round(b.Y / quantum);
+
+        bool firstIsLower = ax < bx || (ax == bx && ay <= by);
+        return firstIsLower ? (ax, ay, bx, by) : (bx, by, ax, ay);
     }
 
     /// <summary>

@@ -63,6 +63,9 @@ internal static class Program
                 case "render":
                     return RenderCommand.Run(command, output);
 
+                case "verify":
+                    return VerifyCommand.Run(command, output);
+
                 default:
                     error.WriteLine($"escherize: unknown command '{command.Command}'.");
                     WriteUsage(error);
@@ -100,8 +103,11 @@ internal static class Program
         writer.WriteLine("  escherize run        --input <file> | --config job.json");
         writer.WriteLine("                       [--n 64] [--types IH4,IH5,IH6|all] [--top 20] [--render-top 5]");
         writer.WriteLine("                       [--min-k 0] [--diversity 0.02] [--min-neck 0.0] [--threads N]");
-        writer.WriteLine("                       [--landmarks lm.json] [--tile-size-mm 200] [--out dir]");
-        writer.WriteLine("  escherize render     --result summary.json --rank 3 [--tiles 80] [--out dir]");
+        writer.WriteLine("                       [--landmarks lm.json] [--tile-size-mm 200]");
+        writer.WriteLine("                       [--stl-height-mm H] [--out dir]");
+        writer.WriteLine("  escherize render     --result summary.json --rank 3 [--tiles 80]");
+        writer.WriteLine("                       [--stl-height-mm H] [--tile-size-mm 200] [--out dir]");
+        writer.WriteLine("  escherize verify     --result summary.json [--rank N]");
         writer.WriteLine();
         writer.WriteLine("Exit codes: 0 success, 1 invalid input, 2 internal error.");
     }

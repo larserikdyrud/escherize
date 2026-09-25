@@ -225,6 +225,15 @@ internal static class RunCommand
                 Path.Combine(job.OutputDirectory, $"{stem}_tiling.svg"), candidate, job.Tiles);
             DxfWriter.Write(
                 Path.Combine(job.OutputDirectory, $"{stem}_tile.dxf"), candidate.Tile, job.TileSizeMillimetres);
+
+            if (job.StlHeightMillimetres > 0)
+            {
+                StlWriter.Write(
+                    Path.Combine(job.OutputDirectory, $"{stem}_tile.stl"),
+                    candidate.Tile,
+                    job.TileSizeMillimetres,
+                    job.StlHeightMillimetres);
+            }
         }
     }
 }
@@ -276,6 +285,12 @@ internal sealed record JobConfig
 
     /// <summary>How many tiles a tiling drawing holds.</summary>
     public int Tiles { get; init; } = 60;
+
+    /// <summary>
+    /// The thickness of the printable solid in millimetres, the <c>--stl-height-mm</c>
+    /// flag. Zero, the default, writes no STL.
+    /// </summary>
+    public double StlHeightMillimetres { get; init; }
 
     /// <summary>Whether the image foreground is light rather than dark.</summary>
     public bool Invert { get; init; }
@@ -335,6 +350,7 @@ internal sealed record JobConfig
             Threads = command.GetInt32("threads", Integer(file, "threads") ?? Environment.ProcessorCount),
             TileSizeMillimetres = command.GetDouble("tile-size-mm") ?? Number(file, "tileSizeMm") ?? 200,
             Tiles = command.GetInt32("tiles", Integer(file, "tiles") ?? 60),
+            StlHeightMillimetres = command.GetDouble("stl-height-mm") ?? Number(file, "stlHeightMm") ?? 0,
             Invert = command.GetSwitch("invert"),
             Threshold = command.GetString("threshold") is { } t
                 ? int.Parse(t, CultureInfo.InvariantCulture)
@@ -366,6 +382,11 @@ internal sealed record JobConfig
         if (config.Threshold is < 0 or > 255)
         {
             throw new CommandLineException("--threshold must be between 0 and 255.");
+        }
+
+        if (config.StlHeightMillimetres < 0)
+        {
+            throw new CommandLineException("--stl-height-mm cannot be negative.");
         }
 
         return config;

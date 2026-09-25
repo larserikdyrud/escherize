@@ -32,6 +32,7 @@ internal static class RenderCommand
         int rank = command.GetInt32("rank", 1);
         int tiles = command.GetInt32("tiles", 60);
         double tileSize = command.GetDouble("tile-size-mm") ?? 200;
+        double stlHeight = command.GetDouble("stl-height-mm") ?? 0;
         string outputDirectory = command.GetString("out") ?? Path.GetDirectoryName(resultPath) ?? ".";
         command.EnsureNoUnknownFlags();
 
@@ -43,6 +44,11 @@ internal static class RenderCommand
         if (rank < 1)
         {
             throw new CommandLineException("--rank must be at least 1.");
+        }
+
+        if (stlHeight < 0)
+        {
+            throw new CommandLineException("--stl-height-mm cannot be negative.");
         }
 
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(resultPath));
@@ -118,6 +124,14 @@ internal static class RenderCommand
         CandidateSvgWriter.WriteTiling(tilingPath, candidate, tiles);
         DxfWriter.Write(dxfPath, candidate.Tile, tileSize);
 
+        string stlLine = string.Empty;
+        if (stlHeight > 0)
+        {
+            string stlPath = Path.Combine(outputDirectory, $"{stem}_tile.stl");
+            StlWriter.Write(stlPath, candidate.Tile, tileSize, stlHeight);
+            stlLine = $"{Environment.NewLine}           {stlPath}";
+        }
+
         output.WriteLine(string.Create(CultureInfo.InvariantCulture, $"""
             result     {resultPath}
             rank       {rank} of {candidates.GetArrayLength()}
@@ -125,7 +139,7 @@ internal static class RenderCommand
             rms        {candidate.RootErrorPercent:0.00} %, neck {candidate.RelativeNeckWidth:0.###}
             wrote      {tilePath}
                        {tilingPath}
-                       {dxfPath}
+                       {dxfPath}{stlLine}
             """));
 
         return 0;

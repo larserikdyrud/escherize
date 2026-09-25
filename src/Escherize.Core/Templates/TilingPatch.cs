@@ -71,10 +71,26 @@ public static class TilingPatch
     {
         ArgumentNullException.ThrowIfNull(layout);
         ArgumentNullException.ThrowIfNull(tile);
+        return Grow(tile, TileIsometries.Build(layout, tile), depth, maximumTiles);
+    }
+
+    /// <summary>
+    /// Grows a patch from a tile whose neighbour isometries are already known. A tile that
+    /// has been turned, as a search result is, carries isometries that were turned with it,
+    /// and those cannot be rebuilt from the outline alone.
+    /// </summary>
+    /// <param name="tile">The base tile points.</param>
+    /// <param name="isometries">The neighbour isometry of every edge.</param>
+    /// <param name="depth">The number of edge crossings to follow.</param>
+    /// <param name="maximumTiles">The upper bound on the number of tiles (SPEC §9.3).</param>
+    /// <returns>The placed tiles, the base tile first.</returns>
+    public static List<PlacedTile> Grow(Vec2[] tile, Isometry[] isometries, int depth, int maximumTiles = 400)
+    {
+        ArgumentNullException.ThrowIfNull(tile);
+        ArgumentNullException.ThrowIfNull(isometries);
         ArgumentOutOfRangeException.ThrowIfNegative(depth);
 
         double quantum = CentroidToleranceFraction * Math.Max(PolygonOps.Diameter(tile), 1e-12);
-        Isometry[] isometries = TileIsometries.Build(layout, tile);
 
         var placed = new List<PlacedTile>(Math.Min(maximumTiles, 64));
         var seen = new HashSet<string>(StringComparer.Ordinal);

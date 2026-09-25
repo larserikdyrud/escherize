@@ -245,6 +245,32 @@ $d = Get-Content ut\summary.json | ConvertFrom-Json
 $d.candidates[0].tile | ForEach-Object { "{0},{1}" -f $_[0], $_[1] } | Set-Content flis.csv
 ```
 
+### Til 3D-print — STL
+
+```powershell
+escherize run --input katt.png --render-top 3 --tile-size-mm 120 --stl-height-mm 6 --out ut
+```
+
+`--stl-height-mm` er tykkelsen i millimeter. Uten flagget skrives ingen STL.
+Du får `ut\rank01_*.stl`:
+
+- binær STL, som er det skjærere flest forventer
+- lengste side av grunnflaten blir `--tile-size-mm`, tykkelsen blir `--stl-height-mm`
+- sentrert om origo, med bunnen på z = 0, så den ligger flatt på byggeplata
+- **vanntett**: hver kant deles av nøyaktig to trekanter, og alle normaler peker utover
+
+STL har ingen enhet i formatet, men alle vanlige skjærere leser tallene som millimeter,
+og det er det de er.
+
+Praktiske tips for print:
+
+- **Legg den flatt.** Flisen er en plate; den trenger verken støtte eller brim.
+- **Tynne halser blir svake.** En hals på 0,1 av √areal på en 120 mm flis er rundt 4 mm
+  bredt. Bruk `--min-neck` hvis flisene skal håndteres, eller øk `--tile-size-mm`.
+- **Vil du at flisene skal klikke sammen?** Skriv ut flere og legg dem etter mønsteret i
+  `*_tiling.svg`. De passer eksakt — men skriv dem ut med litt klaring hvis printeren din
+  legger på en kantlinje, ellers blir de for trange mot hverandre.
+
 ### Til visning — SVG
 
 `rank01_*_tile.svg` viser flisen med kantene fargelagt per par og silhuetten stiplet bak.
@@ -261,7 +287,38 @@ mønsteret selv.
 
 ---
 
-## 6. Styr hva du får
+## 6. Sjekk at flisen faktisk tiler
+
+Flisene tiler i kraft av hvordan de er konstruert, og testsuiten sjekker det for alle ni
+typene. Vil du se det bekreftet for akkurat din flis, før du bruker materiale på den:
+
+```powershell
+escherize verify --result ut\summary.json
+```
+
+```
+rank  type   tiles  patch  edge error  neck   area      verdict
+   1  IH4       61      5     4.4e-17  0.122 347605.974 TILES
+   2  IH4       61      5     8.3e-17  0.122 351431.630 TILES
+```
+
+Kommandoen bygger opp hver kandidat på nytt og sjekker to ting:
+
+- **edge error** — at naboisometrien til hver kant legger partnerkanten nøyaktig oppå den.
+  Tallet skal være rundt 1e-16, altså maskinpresisjon. Kravet er 1e-9.
+- **TILES** — at en lapp på 5 fliser i dybden hverken overlapper eller har hull. Overlapp
+  finnes ved å trekke 20 000 punkter; hull ved å telle kanter, der hver kant må deles av
+  nøyaktig to fliser.
+
+`tiles` er hvor mange fliser i lappen som har en komplett ring av naboer rundt seg.
+
+Returkode 0 betyr at alt består, 1 at noe feilet. Feiler noe, er det en feil i programmet
+— si fra. Bruk `--rank 3` for å sjekke bare én.
+
+Den visuelle sjekken er `*_tiling.svg`: ser du hvite glipper eller fliser som ligger oppå
+hverandre, er noe galt. Men tallsjekken over er strengere enn øyet.
+
+## 7. Styr hva du får
 
 | Flagg | Standard | Hva det gjør |
 |---|---|---|
@@ -273,7 +330,8 @@ mønsteret selv.
 | `--render-top 5` | 5 | Hvor mange som får egne SVG- og DXF-filer. |
 | `--min-neck 0.15` | 0 (av) | Forkast fliser med tynnere hals enn dette. |
 | `--diversity 0.02` | 0.02 | Hvor ulike kandidatene må være. Høyere = mer variasjon. |
-| `--tile-size-mm 200` | 200 | Lengste side av DXF-flisen, i mm. |
+| `--tile-size-mm 200` | 200 | Lengste side av DXF- og STL-flisen, i mm. |
+| `--stl-height-mm 6` | 0 (av) | Tykkelse på STL-en. Uten dette skrives ingen STL. |
 | `--tiles 60` | 60 | Antall fliser i mønstertegningen (30–80). |
 | `--threads 8` | alle kjerner | Antall tråder. |
 | `--min-k 0` | 0 | Nedre grense for punkter per kant. |
@@ -290,7 +348,7 @@ hvis topp-listen fortsatt ser ensformig ut; sett til 0 for å se absolutt alt.
 
 ---
 
-## 7. Fremhev viktige detaljer (landemerker)
+## 8. Fremhev viktige detaljer (landemerker)
 
 Noen trekk betyr mer for gjenkjennelsen enn andre — ørene på en katt, Nordkapp på Norge.
 Legg dem i en fil:
@@ -324,7 +382,7 @@ gir det tydeligere ører og en løsere kropp.
 
 ---
 
-## 8. Tegn én kandidat på nytt
+## 9. Tegn én kandidat på nytt
 
 Vil du ha rang 7 i DXF, eller et større mønster av rang 2, trenger du ikke søke om igjen:
 
@@ -345,7 +403,7 @@ To fallgruver:
 
 ---
 
-## 9. Gjenta et kjør senere
+## 10. Gjenta et kjør senere
 
 Legg innstillingene i en fil i stedet for å skrive dem hver gang:
 
@@ -376,7 +434,7 @@ escherize run --config jobb.json --n 64
 
 ---
 
-## 10. Når noe går galt
+## 11. Når noe går galt
 
 | Symptom | Årsak og botemiddel |
 |---|---|
@@ -394,7 +452,7 @@ Returkoder: `0` greit, `1` ugyldig inndata, `2` intern feil. Feilmeldinger går 
 
 ---
 
-## 11. En full arbeidsgang
+## 12. En full arbeidsgang
 
 Fra bilde til kuttefil:
 

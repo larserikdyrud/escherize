@@ -285,3 +285,42 @@ On a 256 by 256 cat silhouette at n = 36, weighting the two ears with weight 8 a
 0.04 moves the top candidate from IH6 at 4.26 per cent to an IH4 whose plain error is worse,
 4.43 per cent, but whose weighted error is 3.40 per cent: the ears come out sharper and the
 body a little looser, which is the trade the flag exists to make.
+
+### 2026-09-25 - Etter F5: verify og STL
+
+To ting utenfor spesifikasjonen, bedt om av brukeren: en måte å bekrefte at en konkret
+flis tiler, og eksport til 3D-print.
+
+- **`verify`-kommandoen** bygger opp en kandidat fra `summary.json` og kjører testen fra
+  SPEC §8.2 på den. Den svarer på spørsmålet for akkurat den flisen, ikke for typen
+  generelt.
+- **`StlWriter`** trianguleres med ørklipping og ekstruderes. Ørklipping fordi en flis kan
+  være sterkt konkav; en vifte fra ett hjørne ville gitt trekanter utenfor omrisset.
+  Resultatet er vanntett, som er det en skjærer trenger, og det er testet direkte: hver
+  kant må deles av nøyaktig to trekanter, og hver normal må peke bort fra tyngdepunktet.
+
+**To feil i min egen første `verify`, begge funnet på Norge:**
+
+1. `CheckEdgeCoverage` bygget naboisometriene på nytt fra omrisset. For en glideflis er det
+   feil, og det er noe jeg selv skrev ned under F3: en gliderelasjon er uttrykt mot en fast
+   akse, så isometrien kan ikke gjenskapes fra punkter som er rotert. Den roterte flisen må
+   sende med sine egne, konjugerte isometrier. IH5 ga kantfeil 3.0e-01 før fiksen og
+   6.2e-17 etter.
+2. Dekningstesten trakk punkter i en disk med radius 2·R_flis, slik SPEC §8.2 sier. Det
+   passer for de runde flisene valideringen selv genererer, men ikke for en flis tilpasset
+   en lang, tynn form: radiusen er halve lengden, mens lappen vokser langs aksen, så disken
+   rekker langt utenfor lappen og hvert punkt der ute ser ut som et hull. Norge feilet på
+   dette selv om tilingen var riktig.
+
+Punkt 2 er rettet ved å stille de to spørsmålene hver for seg, og ingen av dem avhenger av
+hvor langt lappen rekker:
+
+- **Overlapp** finnes ved å trekke punkter. Det kan ikke være et artefakt: dekker to fliser
+  samme punkt, er tilingen ødelagt uansett hvordan lappen ser ut.
+- **Hull** finnes ved å telle kanter, med samme argument som lukker en flate: deles hver
+  kant av hver flis som har full naboring med nøyaktig én annen flis, er det ingen steder
+  et hull kan være.
+
+Dette erstatter også den gamle dekningstesten i valideringen av SPEC §8.2. Testen er minst
+like streng: alle ni typene består fortsatt med 20 seeds hver, og alle de ni forkastede
+konfigurasjonene feiler fortsatt, nå på overlapp i stedet for på manglende dekning.
