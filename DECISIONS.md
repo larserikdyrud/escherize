@@ -7,9 +7,9 @@ Every entry records what was decided, how it was established and when.
 
 | Id | Decision | Determined by | Status |
 |---|---|---|---|
-| D1 | Glide axis (X or Y) per G pair, for IH2, IH3, IH5 and IH6 | Template validity test, SPEC §8.2 | Open (phase F2) |
-| D2 | Sign of the rotation angle θ, for IH7, IH21 and IH28 | Template validity test, SPEC §8.2 | Open (phase F2) |
-| D3 | Degrees of freedom `md` of the vertex parametrisation per template | SPEC §5.3, asserted `md >= 3` | Open (phase F2) |
+| D1 | Glide axis (X or Y) per G pair, for IH2, IH3, IH5 and IH6 | Template validity test, SPEC §8.2 | **Settled**, F2 |
+| D2 | Sign of the rotation angle θ, for IH7, IH21 and IH28 | Template validity test, SPEC §8.2 | **Settled**, F2 |
+| D3 | Degrees of freedom `md` of the vertex parametrisation per template | SPEC §5.3, asserted `md >= 3` | **Recorded**, F2 |
 
 ## Log
 
@@ -52,3 +52,98 @@ Choices the specification leaves open, all local to the import path:
 
 Measured against the SPEC §8.1 tolerances: the synthetic disc of radius 100 px and the
 square smoothed with H = 8 both pass, as do the equal arc length and projection tests.
+
+### 2026-09-25 - F2: templates, parametrisation, and decisions D1 to D3
+
+The validation of SPEC §8.2 was run over every configuration of every template: all axis
+combinations for the glide pairs and both rotation signs, 22 configurations in total.
+A configuration passes only if it produces a simple tile whose neighbour isometries cover
+its edges to 1e-9 and whose patch covers the sampling disc with every sample in exactly
+one tile.
+
+#### D1 - glide axes
+
+| Template | Glide pairs | Passes | Fails |
+|---|---|---|---|
+| IH2 | B, C | XX, YY | XY, YX |
+| IH3 | B, C | XX, YY | XY, YX |
+| IH5 | B | X, Y | none; the two are equivalent |
+| IH6 | A, B | XY, YX | XX, YY |
+
+**Decision: IH2, IH3 and IH5 put every glide pair on the same axis (X). IH6 is the one
+template whose two glide pairs need different axes (A on X, B on Y).**
+
+Within a template the passing configurations are the same tiling turned a quarter turn,
+so the choice between them is a convention. The choice *between the groups* is not:
+
+- IH2 with mixed axes is degenerate. The corner conditions give edge vector E2 = F E1, and
+  with F = diag(1,-1) forced against a second pair on the other axis the closure condition
+  collapses to E1x = 0, hence E2 = -E1 and V3 = V1. No simple outline exists, and no draw
+  in 50 attempts produced one.
+- IH3 with mixed axes stays non-degenerate but does not tile: its outlines are simple and
+  its edge coverage is exact, yet the patch piles 6 or 7 tiles on the same point.
+- IH6 with matching axes likewise produces simple tiles whose neighbours overlap them.
+
+The edge coverage check alone does not separate these: it holds to about 1e-17 for every
+configuration, correct or not, because it only tests the relation the isometry was built
+from. The covering test is what discriminates.
+
+#### D2 - sign of theta
+
+**Decision: every rotation angle is negative, so IH7 uses -120 degrees, IH21 uses -120 and
+-60, and IH28 uses -90.**
+
+Both alternatives were tried for IH7, IH21 and IH28; the positive sign never produced a
+simple outline in 50 draws, and the negative sign tiles for all 20 seeds. This follows
+from the counter-clockwise convention of SPEC §3: at a rotation centre with interior angle
+alpha, the relation b(i) - V = R(theta) (a(k+1-i) - V) of SPEC §5.1 holds with
+theta = -alpha. A counter-clockwise square, for instance, has interior angle 90 degrees at
+a vertex and satisfies the relation with theta = -90.
+
+#### D3 - vertex degrees of freedom
+
+| Template | IH1 | IH2 | IH3 | IH4 | IH5 | IH6 | IH7 | IH21 | IH28 |
+|---|---|---|---|---|---|---|---|---|---|
+| nv | 6 | 6 | 6 | 6 | 6 | 6 | 6 | 5 | 5 |
+| md | 8 | 7 | 7 | 10 | 8 | 8 | 6 | 6 | 6 |
+
+Every value is at least 3 as SPEC §5.3 requires; two translations, a rotation and a scale
+are always free. IH4 is the largest at 10 because its four C edges impose no condition on
+the vertices at all, leaving only the single translation pair.
+
+#### Two readings of SPEC §8.2 step 2, and which was taken
+
+1. **The perturbation is scaled to a unit direction.** The step says
+   `u = B(B^T w) + 0.05 B r` with r normally distributed. Taken literally, with
+   r ~ N(0, I) over m columns, the nudge has norm 0.05 sqrt(m), which is about 0.32 at
+   n = 36 against a tile of norm at most 1: a 32 per cent perturbation, not 5 per cent.
+   Measured over 200 draws per configuration, that folds the outline so often that only
+   4 to 14 draws in 200 stay simple, and the 50 attempt budget then fails a valid
+   configuration about half the time. Scaling r to unit length makes the perturbation the
+   5 per cent it reads as, and the same measurement gives 112 to 196 simple draws out of
+   200 for valid configurations while the invalid ones stay at 0 to 30. Both readings pick
+   the same winners; only the scaled one does so reliably, so that is what is implemented.
+2. **A redraw is a whole redraw.** "Trekk på nytt ved selvkryssing" is taken to repeat
+   steps 1 and 2 together, so each attempt draws a fresh k vector, goal and noise vector.
+   Keeping the k vector fixed can make a trial hopeless, because a very lopsided k such as
+   [2, 2, 26] puts 26 interior points on one edge and practically always folds.
+
+Two further points where the implementation is deliberately stricter or more specific than
+the text:
+
+- **The fit uses the measure the template calls for.** SPEC §8.2 step 2 writes the plain
+  projection B^T w, but for a glide template SPEC §6.1 says the right measure is
+  Procrustes, with the rotation free. Since a glide template is pinned to an absolute
+  orientation by its axes, the plain projection aligns the goal to those axes by accident
+  and folds most draws. Fitting with `TileFit.Fit`, which picks the measure from the
+  template, is what SPEC §6.1 prescribes and raises the success rate substantially.
+- **The patch is grown to depth 5, not 3.** At depth 3 the patch of IH21 stops short of
+  the sampling disc of radius 2 R around its six fold rotation centre, and the check then
+  reports a gap that the tiling does not have. A deeper patch only adds tiles that must
+  not overlap, so it makes the check stricter; the sampling disc keeps the radius the
+  specification gives.
+
+Only self intersection rejects a draw in §8.2, not orientation. A glide template naturally
+produces a clockwise outline, and the search covers that by running on both W and W_rev
+(SPEC §4.5). The positive orientation rule of SPEC §7.3 applies to search results, not to
+the tiles generated here.
