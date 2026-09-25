@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Geometry, templates, parametrisation, evaluation, search and rendering.
+       BCL only: no NuGet references are allowed here (SPEC §2). -->
+  <PropertyGroup>
+    <RootNamespace>Escherize</RootNamespace>
+    <AssemblyName>Escherize.Core</AssemblyName>
+  </PropertyGroup>
+
+</Project>

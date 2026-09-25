@@ -1,0 +1,22 @@
+# Build output
+bin/
+obj/
+artifacts/
+[Rr]elease/
+[Dd]ebug/
+*.user
+*.suo
+*.binlog
+
+# Visual Studio / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+
+# Test output
+TestResults/
+*.trx
+coverage*.xml
+
+# Escherize run output
+out/

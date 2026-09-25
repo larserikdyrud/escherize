@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- xUnit plus a MathNet.Numerics based oracle (SPEC §8.4). MathNet is a test
+       only dependency and must never be referenced from Escherize.Core. -->
+  <PropertyGroup>
+    <RootNamespace>Escherize.Tests</RootNamespace>
+    <AssemblyName>Escherize.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MathNet.Numerics" Version="5.0.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Escherize.Core\Escherize.Core.csproj" />
+    <ProjectReference Include="..\..\src\Escherize.Imaging\Escherize.Imaging.csproj" />
+    <ProjectReference Include="..\..\src\Escherize.Cli\Escherize.Cli.csproj" />
+  </ItemGroup>
+
+</Project>

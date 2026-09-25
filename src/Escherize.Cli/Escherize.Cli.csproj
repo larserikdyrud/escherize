@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Console front end. Arguments are parsed by hand: no CLI package (SPEC §2). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Escherize.Cli</RootNamespace>
+    <AssemblyName>escherize</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Escherize.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Escherize.Core\Escherize.Core.csproj" />
+    <ProjectReference Include="..\Escherize.Imaging\Escherize.Imaging.csproj" />
+  </ItemGroup>
+
+</Project>
