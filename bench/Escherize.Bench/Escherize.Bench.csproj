@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Performance measurement for SPEC §12. BenchmarkDotNet is a bench only
+       dependency and must never be referenced from Escherize.Core. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Escherize.Bench</RootNamespace>
+    <AssemblyName>Escherize.Bench</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.14.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Escherize.Core\Escherize.Core.csproj" />
+  </ItemGroup>
+
+</Project>

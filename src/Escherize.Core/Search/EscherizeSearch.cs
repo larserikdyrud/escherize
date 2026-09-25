@@ -58,27 +58,29 @@ public static class EscherizeSearch
         int n = goal.PointCount;
         List<(int Index, TemplateSpec Template)> templates = options.ResolveTemplates();
 
-        // The goal coordinates are stored twice so that a shift never needs a modulo,
-        // once per orientation (SPEC §6.3).
-        double[][] doubledX = [Doubled(goal.W, n), Doubled(goal.WReversed, n)];
-        double[][] doubledY = [DoubledY(goal.W, n), DoubledY(goal.WReversed, n)];
+        // The lookup tables of SPEC §6.3, one set per orientation, built once for the
+        // whole search.
+        GoalTables[] tables = [new GoalTables(goal.W), new GoalTables(goal.WReversed)];
 
         var overall = new TopCandidates(options.RawCandidateCount);
         long totalEvaluations = 0;
         long completedChunks = 0;
         long totalChunks = 0;
 
+        // The k vectors of a template are enumerated once and used for both orientations.
+        // At n = 120 the largest template has millions of them, so materialising the list
+        // twice would cost hundreds of megabytes against the budget of SPEC §12.
         var work = new List<(bool Reversed, int TypeIndex, TemplateSpec Template, int[][] KVectors)>();
-        foreach (bool reversed in (bool[])[false, true])
+        foreach ((int index, TemplateSpec template) in templates)
         {
-            foreach ((int index, TemplateSpec template) in templates)
+            int[][] kVectors = [.. KVectorEnumerator.Enumerate(template, n, options.MinimumK)];
+            if (kVectors.Length == 0)
             {
-                int[][] kVectors = [.. KVectorEnumerator.Enumerate(template, n, options.MinimumK)];
-                if (kVectors.Length == 0)
-                {
-                    continue;
-                }
+                continue;
+            }
 
+            foreach (bool reversed in (bool[])[false, true])
+            {
                 work.Add((reversed, index, template, kVectors));
                 totalChunks += (kVectors.Length + ChunkSize - 1) / ChunkSize;
             }
@@ -94,8 +96,7 @@ public static class EscherizeSearch
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            double[] x = doubledX[reversed ? 1 : 0];
-            double[] y = doubledY[reversed ? 1 : 0];
+            GoalTables goalTables = tables[reversed ? 1 : 0];
 
             var collectors = new ConcurrentBag<TopCandidates>();
             var parallelOptions = new ParallelOptions
@@ -111,11 +112,30 @@ public static class EscherizeSearch
                 (range, _, local) =>
                 {
                     long localEvaluations = 0;
+
+                    // One evaluator serves the whole chunk; a k vector is loaded into it
+                    // rather than building a new one (SPEC §6.3, §0.6).
+                    var evaluator = new FastEvaluator(TemplatePlan.For(template), goalTables);
+
                     for (int index = range.Item1; index < range.Item2; index++)
                     {
                         int[] k = kVectors[index];
-                        TileBasis basis = DenseBasisBuilder.Build(template, k);
-                        localEvaluations += EvaluateAllOffsets(basis, x, y, n, typeIndex, k, reversed, local);
+                        evaluator.Load(BasisPlan.Create(TileLayout.Create(template, k)));
+
+                        for (int j = 0; j < n; j++)
+                        {
+                            double error = evaluator.Evaluate(j);
+
+                            // Almost every evaluation is far from the best seen so far, so
+                            // the candidate is only built when it stands a chance.
+                            if (local.IsWorthOffering(error))
+                            {
+                                local.Offer(new ScoredCandidate(
+                                    new CandidateKey(typeIndex, k, j, reversed), error));
+                            }
+                        }
+
+                        localEvaluations += n;
                     }
 
                     Interlocked.Add(ref totalEvaluations, localEvaluations);
@@ -135,105 +155,4 @@ public static class EscherizeSearch
         return overall.ToSortedList();
     }
 
-    /// <summary>
-    /// Evaluates every start offset for one basis, offering each result to the collector
-    /// (SPEC §6.1, §6.2).
-    /// </summary>
-    /// <param name="basis">The tile basis.</param>
-    /// <param name="doubledX">The doubled goal x coordinates.</param>
-    /// <param name="doubledY">The doubled goal y coordinates.</param>
-    /// <param name="n">The number of points.</param>
-    /// <param name="typeIndex">The template index.</param>
-    /// <param name="k">The k vector.</param>
-    /// <param name="reversed">Whether the reversed goal is in use.</param>
-    /// <param name="collector">The collector.</param>
-    /// <returns>The number of evaluations performed.</returns>
-    private static long EvaluateAllOffsets(
-        TileBasis basis,
-        double[] doubledX,
-        double[] doubledY,
-        int n,
-        int typeIndex,
-        int[] k,
-        bool reversed,
-        TopCandidates collector)
-    {
-        int m = basis.ColumnCount;
-        bool procrustes = basis.Template.UsesProcrustes;
-
-        var projection = new double[m];
-        var rotatedProjection = new double[procrustes ? m : 0];
-
-        for (int j = 0; j < n; j++)
-        {
-            basis.ProjectShifted(doubledX, doubledY, j, projection, rotatedProjection);
-
-            // The goal has unit norm and a shift only permutes it, so ||w_j|| stays one.
-            double error;
-            if (procrustes)
-            {
-                double g11 = 0;
-                double g22 = 0;
-                double g12 = 0;
-                for (int c = 0; c < m; c++)
-                {
-                    g11 += projection[c] * projection[c];
-                    g22 += rotatedProjection[c] * rotatedProjection[c];
-                    g12 += projection[c] * rotatedProjection[c];
-                }
-
-                double half = (g11 - g22) / 2;
-                double lambda = ((g11 + g22) / 2) + Math.Sqrt((half * half) + (g12 * g12));
-                error = 1.0 - lambda;
-            }
-            else
-            {
-                double squared = 0;
-                for (int c = 0; c < m; c++)
-                {
-                    squared += projection[c] * projection[c];
-                }
-
-                error = 1.0 - squared;
-            }
-
-            collector.Offer(new ScoredCandidate(
-                new CandidateKey(typeIndex, k, j, reversed),
-                Math.Max(0, error)));
-        }
-
-        return n;
-    }
-
-    /// <summary>Repeats the x block of a coordinate vector so that shifts need no modulo.</summary>
-    /// <param name="w">The coordinate vector of length 2n.</param>
-    /// <param name="n">The number of points.</param>
-    /// <returns>An array of length 2n holding the x coordinates twice.</returns>
-    private static double[] Doubled(ReadOnlySpan<double> w, int n)
-    {
-        var result = new double[2 * n];
-        for (int t = 0; t < n; t++)
-        {
-            result[t] = w[t];
-            result[n + t] = w[t];
-        }
-
-        return result;
-    }
-
-    /// <summary>Repeats the y block of a coordinate vector.</summary>
-    /// <param name="w">The coordinate vector of length 2n.</param>
-    /// <param name="n">The number of points.</param>
-    /// <returns>An array of length 2n holding the y coordinates twice.</returns>
-    private static double[] DoubledY(ReadOnlySpan<double> w, int n)
-    {
-        var result = new double[2 * n];
-        for (int t = 0; t < n; t++)
-        {
-            result[t] = w[n + t];
-            result[n + t] = w[n + t];
-        }
-
-        return result;
-    }
 }

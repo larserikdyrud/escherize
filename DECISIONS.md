@@ -185,3 +185,74 @@ the tiles generated here.
 Measured with the dense evaluator on 16 logical cores: n = 36 over all nine types and both
 orientations takes 1.6 s, n = 48 takes 6.2 s. The targets of SPEC §12 are for the fast
 evaluator of phase F4 and are not claimed here.
+
+### 2026-09-25 - F4: fast evaluator, oracle and performance
+
+The fast evaluator of SPEC §6.3 is in place and the search uses it; the dense builder stays
+for reconstruction, for the weighted reranking of phase F5 and as the reference the oracle
+compares against.
+
+- **One source of truth for the basis.** The parametrisation was refactored so that both
+  evaluators work from the same description. `TemplatePlan` holds everything that depends
+  only on the template, which is where the null space computation, the projected blocks X'
+  and their Gram contributions live; `BasisPlan` adds the part that depends on the k vector,
+  which is the run placements and the Cholesky factor. The dense builder now materialises B
+  from that plan rather than deriving it separately, so the two cannot drift apart.
+- **Run slots.** Every run carries the position it occupies among all the runs a template
+  can have, counting the ones a small k leaves out. The evaluator indexes the template
+  tables with it directly.
+- **The tables are interleaved.** SPEC §6.3 describes eight two dimensional tables. They
+  hold exactly the values the specification defines, but four are stored together so that
+  the four products of one position are neighbours; the five prefix sums are interleaved
+  the same way and padded to a cache line. Only the arrangement differs.
+- **Nothing is allocated per evaluation.** A worker builds one evaluator per chunk and
+  points it at each k vector with `Load`, so the inner loop allocates nothing, uses no LINQ
+  and calls nothing virtual, as SPEC §0.6 requires. The collector keeps a threshold and
+  only builds a candidate that can still make the list, which matters when tens of millions
+  of evaluations produce a few hundred keepers.
+- **Ordering is quantised.** Candidates are ordered by the error rounded to 1e-12, the
+  margin of SPEC §7.2, before the key of SPEC §7.1 decides. Two candidates often have the
+  same error for a real reason, usually a symmetric goal, and comparing raw doubles let the
+  last few bits of a summation order decide the ranking instead of the specified key. The
+  rounding is a plain function of the error, so the comparison stays a total order. The
+  snapshots of SPEC §8.7 were regenerated when this landed: every error value is unchanged
+  and only the tie break moved, in each case towards the key the specification gives.
+- **The k vectors are enumerated once per template, not once per orientation.** Holding the
+  list twice cost about 230 MB at n = 120 and pushed the peak working set to 564 MB, over
+  the budget of SPEC §12. Sharing the list between the two orientations brings it to
+  330 MB.
+
+#### Measured against SPEC §12
+
+Eight threads, Release, all nine types, both orientations, on a 256 by 256 pixel
+silhouette. The machine has 16 logical cores, so `--threads 8` was passed to match the
+condition the specification states.
+
+| Target | Measured | |
+|---|---|---|
+| n = 60, all nine types, both orientations, at most 5 s | 3.7 s | met |
+| n = 96, all nine types, at most 30 s | 24.4 s | met |
+| n = 120, all nine types, at most 90 s | 65.5 s | met |
+| Memory below 500 MB | 330 MB peak working set | met |
+| One evaluation, at most 0.3 us | about 0.54 us | **not met, about 1.8 times over** |
+
+The n = 120 run performs 971 163 600 evaluations in 65.5 s, which is 0.54 us of thread time
+each. The wall clock targets are met with margin because the search parallelises well, but
+the per evaluation target is not.
+
+**What was tried, and what it is not.** The evaluator really is O(1) in n: an evaluation at
+n = 40 costs the same as one at n = 120, which is the property SPEC §6.3 is after. Four
+attempts at closing the remaining factor gave almost nothing, each under ten per cent:
+interleaving the tables so a lookup touches fewer cache lines; removing bounds checks from
+the md loops with reference arithmetic; forcing the per run helpers to inline; and
+vectorising the md loops with `Vector<double>`. That the first of those did not help rules
+out the tables being the bottleneck, and the last two rule out the md loops. The remaining
+cost is therefore somewhere the current model does not account for, and the next step is a
+profiler rather than more guesswork. A hand written timing loop was too noisy to localise it
+- it swung by a third between identical runs, and produced a pattern, every template with a
+translation run being several times slower than the structurally identical IH6, that none of
+the above explains.
+
+The paper reports 5.1 s for n = 60 on one thread with an O(n) evaluator, which works out at
+roughly 0.18 us per evaluation, so the target is reachable in principle and the gap is
+implementation, not approach.

@@ -43,6 +43,10 @@ public readonly record struct BasisPoint(int VertexA, int VertexB)
 /// <param name="PBasis">The basis point of the P side.</param>
 /// <param name="QBasis">The basis point of the Q side.</param>
 /// <param name="ColumnStart">The index of the first of this run's columns within the edge block.</param>
+/// <param name="Slot">
+/// The position of this run among all the runs the template can have, counting the runs a
+/// small k leaves out. It lets the parametrisation index the template tables directly.
+/// </param>
 public sealed record EdgeRun(
     EdgeKind Kind,
     int EdgeA,
@@ -56,7 +60,8 @@ public sealed record EdgeRun(
     double[] Ly,
     BasisPoint PBasis,
     BasisPoint QBasis,
-    int ColumnStart)
+    int ColumnStart,
+    int Slot)
 {
     /// <summary>The point index of P(i).</summary>
     /// <param name="i">The one based index within the run.</param>
@@ -187,6 +192,10 @@ public sealed class TileLayout
         var midpointEdges = new List<int>();
         int columns = 0;
 
+        // The slot counter advances for every run the template can have, whether or not
+        // this k vector is large enough to produce it.
+        int slot = 0;
+
         // C edges pair their own interior points about the edge midpoint.
         for (int s = 0; s < nv; s++)
         {
@@ -209,9 +218,12 @@ public sealed class TileLayout
                     Ly: [0, 1, 0, -1],
                     PBasis: basis,
                     QBasis: basis,
-                    ColumnStart: columns));
+                    ColumnStart: columns,
+                    Slot: slot));
                 columns += 2 * length;
             }
+
+            slot++;
 
             if (ks % 2 == 1)
             {
@@ -227,6 +239,7 @@ public sealed class TileLayout
             int ka = edgeK[a];
             if (ka == 0)
             {
+                slot++;
                 continue;
             }
 
@@ -240,17 +253,19 @@ public sealed class TileLayout
                     Ly: [0, 1, 0, 1],
                     PBasis: BasisPoint.Vertex(a),
                     QBasis: BasisPoint.Vertex((b + 1) % nv),
-                    ColumnStart: columns),
+                    ColumnStart: columns,
+                    Slot: slot),
 
-                EdgeKind.G => BuildGlideRun(edge, a, b, ka, h, nv, columns),
+                EdgeKind.G => BuildGlideRun(edge, a, b, ka, h, nv, columns, slot),
 
-                EdgeKind.R => BuildRotationRun(edge, a, b, ka, h, nv, columns),
+                EdgeKind.R => BuildRotationRun(edge, a, b, ka, h, nv, columns, slot),
 
                 _ => throw new InvalidOperationException($"Edge kind {edge.Kind} cannot be a pair."),
             };
 
             runs.Add(run);
             columns += 2 * ka;
+            slot++;
         }
 
         return new TileLayout(
@@ -265,8 +280,9 @@ public sealed class TileLayout
     /// <param name="h">The vertex offsets.</param>
     /// <param name="nv">The number of vertices.</param>
     /// <param name="columnStart">The first column index.</param>
+    /// <param name="slot">The run slot.</param>
     /// <returns>The run.</returns>
-    private static EdgeRun BuildGlideRun(EdgeSpec edge, int a, int b, int k, int[] h, int nv, int columnStart)
+    private static EdgeRun BuildGlideRun(EdgeSpec edge, int a, int b, int k, int[] h, int nv, int columnStart, int slot)
     {
         (double fx, double fy) = edge.Axis.MirrorFactors();
         return new EdgeRun(
@@ -277,7 +293,8 @@ public sealed class TileLayout
             Ly: [0, 1, 0, fy],
             PBasis: BasisPoint.Vertex(a % nv),
             QBasis: BasisPoint.Vertex(b % nv),
-            ColumnStart: columnStart);
+            ColumnStart: columnStart,
+            Slot: slot);
     }
 
     /// <summary>Builds the run of a rotation pair (SPEC §5.4).</summary>
@@ -288,9 +305,10 @@ public sealed class TileLayout
     /// <param name="h">The vertex offsets.</param>
     /// <param name="nv">The number of vertices.</param>
     /// <param name="columnStart">The first column index.</param>
+    /// <param name="slot">The run slot.</param>
     /// <returns>The run.</returns>
     /// <exception cref="InvalidOperationException">The two edges of the pair are not adjacent.</exception>
-    private static EdgeRun BuildRotationRun(EdgeSpec edge, int a, int b, int k, int[] h, int nv, int columnStart)
+    private static EdgeRun BuildRotationRun(EdgeSpec edge, int a, int b, int k, int[] h, int nv, int columnStart, int slot)
     {
         if ((a + 1) % nv != b % nv)
         {
@@ -310,6 +328,7 @@ public sealed class TileLayout
             Ly: [0, 1, -sin, cos],
             PBasis: BasisPoint.Vertex(b % nv),
             QBasis: BasisPoint.Vertex(b % nv),
-            ColumnStart: columnStart);
+            ColumnStart: columnStart,
+            Slot: slot);
     }
 }

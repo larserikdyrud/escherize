@@ -7,8 +7,27 @@ namespace Escherize.Search;
 /// </summary>
 public sealed class CandidateOrder : IComparer<ScoredCandidate>
 {
+    /// <summary>
+    /// The step the error is rounded to before candidates are compared, matching the
+    /// margin of SPEC §7.2.
+    /// </summary>
+    /// <remarks>
+    /// Two candidates can have the same error for a real reason, typically because the
+    /// goal is symmetric, and then the key decides which comes first. Comparing the raw
+    /// doubles would instead let the last few bits decide, and those depend on the order
+    /// the sums happened to be accumulated in. Rounding first keeps the comparison a total
+    /// order, since it is a plain function of the error, and makes the ranking depend on
+    /// the specified key rather than on arithmetic noise.
+    /// </remarks>
+    public const double ErrorQuantum = 1e-12;
+
     /// <summary>The shared instance.</summary>
     public static CandidateOrder Instance { get; } = new();
+
+    /// <summary>Rounds an error to the comparison grid.</summary>
+    /// <param name="error">The error.</param>
+    /// <returns>The rounded error.</returns>
+    public static double Quantize(double error) => Math.Round(error / ErrorQuantum) * ErrorQuantum;
 
     /// <inheritdoc/>
     public int Compare(ScoredCandidate? x, ScoredCandidate? y)
@@ -28,7 +47,7 @@ public sealed class CandidateOrder : IComparer<ScoredCandidate>
             return 1;
         }
 
-        int byError = x.Error.CompareTo(y.Error);
+        int byError = Quantize(x.Error).CompareTo(Quantize(y.Error));
         if (byError != 0)
         {
             return byError;
@@ -79,6 +98,7 @@ public sealed class TopCandidates(int capacity)
 {
     private readonly List<ScoredCandidate> _items = new(2 * capacity);
     private bool _sorted = true;
+    private double _threshold = double.PositiveInfinity;
 
     /// <summary>How many candidates are kept.</summary>
     public int Capacity { get; } = capacity;
@@ -86,10 +106,36 @@ public sealed class TopCandidates(int capacity)
     /// <summary>The number of candidates currently held.</summary>
     public int Count => _items.Count;
 
+    /// <summary>
+    /// The error a candidate has to beat to be worth keeping. It is infinite until the
+    /// collector has filled up once.
+    /// </summary>
+    /// <remarks>
+    /// The search offers one candidate per evaluation, which runs into the tens of
+    /// millions, while only a couple of hundred are ever kept. Testing the error against
+    /// this bound first means the overwhelming majority cost one comparison rather than an
+    /// allocation and a share of a sort.
+    /// </remarks>
+    public double Threshold => _threshold;
+
+    /// <summary>
+    /// Whether a candidate with this error could still be kept. The caller can use it to
+    /// avoid building a candidate that would be dropped immediately.
+    /// </summary>
+    /// <param name="error">The error.</param>
+    /// <returns>True when the candidate is worth offering.</returns>
+    public bool IsWorthOffering(double error) => error <= _threshold;
+
     /// <summary>Offers a candidate; it is kept only if it is among the best.</summary>
     /// <param name="candidate">The candidate.</param>
     public void Offer(ScoredCandidate candidate)
     {
+        ArgumentNullException.ThrowIfNull(candidate);
+        if (candidate.Error > _threshold)
+        {
+            return;
+        }
+
         _items.Add(candidate);
         _sorted = false;
         if (_items.Count >= 2 * Capacity)
@@ -117,7 +163,7 @@ public sealed class TopCandidates(int capacity)
         return [.. _items];
     }
 
-    /// <summary>Sorts and truncates to the capacity.</summary>
+    /// <summary>Sorts, truncates to the capacity, and updates the threshold.</summary>
     private void Trim()
     {
         if (!_sorted)
@@ -129,6 +175,14 @@ public sealed class TopCandidates(int capacity)
         if (_items.Count > Capacity)
         {
             _items.RemoveRange(Capacity, _items.Count - Capacity);
+        }
+
+        // Once the collector is full, anything worse than its last entry is of no use.
+        // Candidates that tie with it on the quantised error are still let through, so
+        // that the key of SPEC §7.1 decides between them rather than the arrival order.
+        if (_items.Count >= Capacity)
+        {
+            _threshold = _items[^1].Error;
         }
     }
 }
