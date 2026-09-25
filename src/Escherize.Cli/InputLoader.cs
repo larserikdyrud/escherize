@@ -22,7 +22,16 @@ internal enum InputKind
 /// <param name="Contour">The contour, y-up.</param>
 /// <param name="Kind">How it was obtained.</param>
 /// <param name="Details">A short human readable note about the import.</param>
-internal sealed record LoadedInput(Vec2[] Contour, InputKind Kind, string Details);
+/// <param name="ToContourSpace">
+/// Maps a position written in the coordinates of the input file into the frame the contour
+/// lives in, which is what a landmark position has to go through (SPEC §4.6, §11). It flips
+/// y for an image, projects for GeoJSON, and leaves a plain polygon alone.
+/// </param>
+internal sealed record LoadedInput(
+    Vec2[] Contour,
+    InputKind Kind,
+    string Details,
+    Func<Vec2, Vec2> ToContourSpace);
 
 /// <summary>Dispatches an input file to the reader that matches it (SPEC §4.1 to §4.3).</summary>
 internal static class InputLoader
@@ -55,13 +64,16 @@ internal static class InputLoader
                 string details =
                     $"{result.Mask.Width}x{result.Mask.Height} px, threshold {result.Threshold}, " +
                     $"{result.Contour.Length} contour points";
-                return new LoadedInput(result.Contour, InputKind.Image, details);
+
+                // Image rows run downwards and the contour was mirrored on import.
+                return new LoadedInput(
+                    result.Contour, InputKind.Image, details, static p => new Vec2(p.X, -p.Y));
             }
 
             case ".csv":
             {
                 Vec2[] contour = PolygonReader.ReadCsv(path);
-                return new LoadedInput(contour, InputKind.Polygon, $"{contour.Length} points");
+                return new LoadedInput(contour, InputKind.Polygon, $"{contour.Length} points", Identity);
             }
 
             case ".geojson":
@@ -89,7 +101,7 @@ internal static class InputLoader
     private static LoadedInput LoadPolygonJson(string path)
     {
         Vec2[] contour = PolygonReader.ReadJson(path);
-        return new LoadedInput(contour, InputKind.Polygon, $"{contour.Length} points");
+        return new LoadedInput(contour, InputKind.Polygon, $"{contour.Length} points", Identity);
     }
 
     /// <summary>Reads and projects a GeoJSON file.</summary>
@@ -106,8 +118,16 @@ internal static class InputLoader
         string details =
             $"ring {result.RingIndex} of {result.RingCount}, {result.Contour.Length} points, " +
             $"Lambert azimuthal equal-area centred on {centre}";
-        return new LoadedInput(result.Contour, InputKind.GeoJson, details);
+
+        // A landmark is given as longitude and latitude and goes through the same
+        // projection as the outline (SPEC §11).
+        LambertAzimuthalEqualArea projection = result.Projection;
+        return new LoadedInput(
+            result.Contour, InputKind.GeoJson, details, p => projection.Project(p.X, p.Y));
     }
+
+    /// <summary>The transform used when the input file is already in contour coordinates.</summary>
+    private static Vec2 Identity(Vec2 point) => point;
 
     /// <summary>Peeks at a JSON file to tell GeoJSON from a plain polygon.</summary>
     /// <param name="path">The file.</param>

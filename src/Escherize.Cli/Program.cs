@@ -60,10 +60,8 @@ internal static class Program
                 case "run":
                     return RunCommand.Run(command, output);
 
-                // The render command arrives with phase F5 (SPEC §10).
                 case "render":
-                    error.WriteLine($"escherize: the command '{command.Command}' is not implemented yet.");
-                    return ExitInvalidInput;
+                    return RenderCommand.Run(command, output);
 
                 default:
                     error.WriteLine($"escherize: unknown command '{command.Command}'.");

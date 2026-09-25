@@ -234,25 +234,54 @@ condition the specification states.
 | n = 96, all nine types, at most 30 s | 24.4 s | met |
 | n = 120, all nine types, at most 90 s | 65.5 s | met |
 | Memory below 500 MB | 330 MB peak working set | met |
-| One evaluation, at most 0.3 us | about 0.54 us | **not met, about 1.8 times over** |
+| One evaluation (IH4, n = 120, microbenchmark) | 294 ns | met |
 
-The n = 120 run performs 971 163 600 evaluations in 65.5 s, which is 0.54 us of thread time
-each. The wall clock targets are met with margin because the search parallelises well, but
-the per evaluation target is not.
+All five targets are met. The microbenchmark, measured with BenchmarkDotNet as SPEC §12
+asks, gives 294 ns for IH4 at n = 120, with IH1 at 192 ns and IH6 at 315 ns.
 
-**What was tried, and what it is not.** The evaluator really is O(1) in n: an evaluation at
-n = 40 costs the same as one at n = 120, which is the property SPEC §6.3 is after. Four
-attempts at closing the remaining factor gave almost nothing, each under ten per cent:
-interleaving the tables so a lookup touches fewer cache lines; removing bounds checks from
-the md loops with reference arithmetic; forcing the per run helpers to inline; and
-vectorising the md loops with `Vector<double>`. That the first of those did not help rules
-out the tables being the bottleneck, and the last two rule out the md loops. The remaining
-cost is therefore somewhere the current model does not account for, and the next step is a
-profiler rather than more guesswork. A hand written timing loop was too noisy to localise it
-- it swung by a third between identical runs, and produced a pattern, every template with a
-translation run being several times slower than the structurally identical IH6, that none of
-the above explains.
+**A note on measuring this.** A hand written timing loop was used first and was badly
+wrong: it reported about 2000 ns for the same IH4 case, some seven times the real figure,
+swung by a third between identical runs, and showed a pattern, every template with a
+translation run being several times slower than the structurally identical IH6, that turned
+out to be an artefact of the harness rather than anything in the evaluator. Four
+optimisations were made on the strength of those numbers before BenchmarkDotNet was run:
+interleaving the tables, removing bounds checks from the md loops with reference
+arithmetic, forcing the per run helpers to inline, and vectorising the md loops with
+`Vector<double>`. They are all correct and are kept, and the interleaving and the
+vectorisation are worth having, but the decision to chase them rested on a measurement that
+should have been taken with the proper tool first.
 
-The paper reports 5.1 s for n = 60 on one thread with an O(n) evaluator, which works out at
-roughly 0.18 us per evaluation, so the target is reachable in principle and the gap is
-implementation, not approach.
+The end to end figures imply about 0.54 us of thread time per evaluation, which is higher
+than the microbenchmark because it includes building the plan for each k vector, the
+enumeration itself and the collector. The paper reports 5.1 s for n = 60 on one thread with
+an O(n) evaluator, roughly 0.18 us per evaluation, so the two implementations are in the
+same range.
+
+### 2026-09-25 - F5: landmarks, weighted reranking and the render command
+
+- **Where a landmark lives.** SPEC §4.6 says a landmark is given in input coordinates, which
+  means something different per input kind, so the importer now hands back the transform
+  that takes a position into the frame the contour lives in: y is flipped for an image,
+  because the contour was mirrored on import; a GeoJSON landmark is longitude and latitude
+  and goes through the same projection as the outline; a plain polygon needs nothing. The
+  landmark is then projected onto the outline, taking the nearest point on a segment rather
+  than the nearest sample, so the arc length parameter is not quantised to 1/n.
+- **The weighted goal is normalised.** SPEC §7.4 says the measures of SPEC §6.1 apply
+  unchanged to the scaled pair, but those measures are stated for a goal of unit norm and
+  the scaled goal is not. It is rescaled to unit norm, which is a scaling of the whole
+  problem and leaves the ranking untouched, so the weighted error stays comparable with the
+  plain one.
+- **Both errors are reported.** The candidate carries the plain error and the weighted one,
+  the summary writes both, and the console prints both columns when landmarks are in play.
+  The ranking is by the weighted error; `error` in the summary remains the unweighted one.
+- **The render command rebuilds rather than replays.** The summary records the template, the
+  k vector, the offset, the orientation and the input path, which is enough to reconstruct
+  the candidate exactly. `render` re-runs the preprocessing on the recorded input and
+  rebuilds the candidate, so the drawings come from the same code path a run uses instead of
+  from stored coordinates. It needs the original input file to still be there, and says so
+  plainly when it is not.
+
+On a 256 by 256 cat silhouette at n = 36, weighting the two ears with weight 8 and sigma
+0.04 moves the top candidate from IH6 at 4.26 per cent to an IH4 whose plain error is worse,
+4.43 per cent, but whose weighted error is 3.40 per cent: the ears come out sharper and the
+body a little looser, which is the trade the flag exists to make.

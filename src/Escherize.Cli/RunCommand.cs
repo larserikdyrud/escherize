@@ -73,7 +73,33 @@ internal static class RunCommand
             CultureInfo.InvariantCulture,
             $"             total {combinations,12} k vectors, both orientations"));
 
-        SearchResult result = EscherizeSearch.Run(goal, searchOptions);
+        // Landmarks make the search care more about some parts of the outline than
+        // others; the ranking is redone with them afterwards (SPEC §4.6, §7.4).
+        List<Landmark>? landmarks = null;
+        double[]? weights = null;
+        if (job.Landmarks is { } landmarkPath)
+        {
+            if (!File.Exists(landmarkPath))
+            {
+                throw new CommandLineException($"The landmark file '{landmarkPath}' does not exist.");
+            }
+
+            landmarks = LandmarkReader.Read(landmarkPath);
+            var placed = new List<Landmark>(landmarks.Count);
+            foreach (Landmark landmark in landmarks)
+            {
+                placed.Add(landmark with { Position = loaded.ToContourSpace(landmark.Position) });
+            }
+
+            weights = Landmarks.Weights(goal, placed);
+            output.WriteLine(string.Create(
+                CultureInfo.InvariantCulture,
+                $"landmarks  {placed.Count}, weights from {Minimum(weights):0.###} to {Maximum(weights):0.###}"));
+        }
+
+        SearchResult result = weights is null
+            ? EscherizeSearch.Run(goal, searchOptions)
+            : RunWeighted(goal, weights, searchOptions);
 
         Directory.CreateDirectory(job.OutputDirectory);
         WriteOutputs(job, goal, searchOptions, result, output);
@@ -87,17 +113,72 @@ internal static class RunCommand
 
         if (result.Candidates.Count > 0)
         {
-            output.WriteLine("rank  type   rms %   neck   k");
+            bool weighted = result.Candidates[0].WeightedError is not null;
+            output.WriteLine(weighted
+                ? "rank  type   rms %   weighted   neck   k"
+                : "rank  type   rms %   neck   k");
+
             for (int i = 0; i < result.Candidates.Count; i++)
             {
                 Candidate candidate = result.Candidates[i];
+                string weightedColumn = candidate.WeightedError is { } value
+                    ? string.Create(CultureInfo.InvariantCulture, $"{100 * Math.Sqrt(value),8:0.00}  ")
+                    : string.Empty;
+
                 output.WriteLine(string.Create(CultureInfo.InvariantCulture,
                     $"{i + 1,4}  {candidate.Template.Name,-5} {candidate.RootErrorPercent,6:0.00}  " +
-                    $"{candidate.RelativeNeckWidth,5:0.000}  [{string.Join(",", candidate.Key.K)}]"));
+                    $"{weightedColumn}{candidate.RelativeNeckWidth,5:0.000}  [{string.Join(",", candidate.Key.K)}]"));
             }
         }
 
         return 0;
+    }
+
+    /// <summary>
+    /// Runs the search and reranks the raw candidates with the landmark weights
+    /// (SPEC §7.4).
+    /// </summary>
+    /// <param name="goal">The normalised goal.</param>
+    /// <param name="weights">One weight per goal point.</param>
+    /// <param name="options">The search options.</param>
+    /// <returns>The result, ranked by the weighted measure.</returns>
+    private static SearchResult RunWeighted(GoalShape goal, double[] weights, SearchOptions options)
+    {
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        List<ScoredCandidate> raw = EscherizeSearch.Search(
+            goal, options, progress: null, cancellationToken: default, out long evaluations);
+        List<Candidate> candidates = WeightedReranker.Rerank(goal, weights, raw, options);
+        stopwatch.Stop();
+
+        return new SearchResult(candidates, raw, evaluations, stopwatch.Elapsed);
+    }
+
+    /// <summary>The smallest of a set of weights.</summary>
+    /// <param name="values">The weights.</param>
+    /// <returns>The smallest.</returns>
+    private static double Minimum(double[] values)
+    {
+        double best = double.PositiveInfinity;
+        foreach (double value in values)
+        {
+            best = Math.Min(best, value);
+        }
+
+        return best;
+    }
+
+    /// <summary>The largest of a set of weights.</summary>
+    /// <param name="values">The weights.</param>
+    /// <returns>The largest.</returns>
+    private static double Maximum(double[] values)
+    {
+        double best = double.NegativeInfinity;
+        foreach (double value in values)
+        {
+            best = Math.Max(best, value);
+        }
+
+        return best;
     }
 
     /// <summary>Writes every output file of SPEC §9.1.</summary>
@@ -208,6 +289,9 @@ internal sealed record JobConfig
     /// <summary>The GeoJSON ring to select.</summary>
     public int? RingIndex { get; init; }
 
+    /// <summary>The landmark file, the <c>--landmarks</c> flag (SPEC §11).</summary>
+    public string? Landmarks { get; init; }
+
     /// <summary>Reads the configuration from the command line and an optional job file.</summary>
     /// <param name="command">The parsed command line.</param>
     /// <returns>The configuration.</returns>
@@ -259,9 +343,9 @@ internal sealed record JobConfig
             RingIndex = command.GetString("ring-index") is { } r
                 ? int.Parse(r, CultureInfo.InvariantCulture)
                 : Integer(file, "ringIndex"),
+            Landmarks = command.GetString("landmarks") ?? Text(file, "landmarks"),
         };
 
-        command.GetString("landmarks");
         command.EnsureNoUnknownFlags();
 
         if (config.PointCount < 3)
