@@ -10,6 +10,8 @@ Escher gjorde for hånd med øgler og fugler, løst som et optimeringsproblem.
 Ut kommer polygonet: som JSON, som SVG, som DXF i millimeter for kutter, og som vanntett
 STL for 3D-print.
 
+![Norges kystlinje, tilpasset en isohedral flis, som deretter flislegger planet](docs/images/pipeline.svg)
+
 ## Eksempel
 
 Norges fastland, tilpasset til IH4, flislagt:
@@ -26,6 +28,18 @@ rank  type   rms %   neck   k
 
 Kystlinja er den ekte, deformert 4,5 % — nok til å lukke flisleggingen, lite nok til at
 formen fortsatt er Norge.
+
+`--min-neck 0.12` er det som gjør flisen produserbar. Norges smaleste punkt er 6,3 km, og
+akkurat der vil en flis knekke; grensen tvinger fram en hals på rundt 6 mm ved 120 mm
+flisstørrelse. Uten den finnes det nærmere treff, men de tåler ikke å bli plukket opp.
+
+### Printet
+
+<!-- Bytt ut med foto av de printede flisene, gjerne flere lagt sammen ovenfra.
+     Legg bildet i docs/images/ og oppdater stien under. -->
+
+`produserbar/rank01_IH4_tile.stl` — 120 × 102 × 6 mm, 252 trekanter, vanntett. Flatt på
+plata, uten støtter.
 
 ## Kom i gang
 
