@@ -9,7 +9,8 @@ Nagata & Imahori, *An Efficient Algorithm for the Escherization Problem in the P
 
 ## 0. Instruksjoner til Claude Code
 
-1. Les hele dokumentet før du begynner. Artikkelen ligger i `docs/1912.09605.pdf`.
+1. Les hele dokumentet før du begynner. Artikkelen finnes på https://arxiv.org/abs/1912.09605
+   (last den ned selv; den distribueres ikke med dette repoet).
 2. Implementer fase for fase i rekkefølgen i §10. Etter hver fase skal `dotnet build` gi null advarsler og `dotnet test` være grønt før du går videre. Lag én commit per fase.
 3. Ikke svekk toleranser, marker tester som `Skip` eller slett tester for å få dem grønne. Avdekker en test at spesifikasjonen er feil, skal du stoppe, beskrive funnet i `DECISIONS.md` og spørre.
 4. To detaljer er bevisst **ikke** låst i spesifikasjonen: glideaksen (X/Y) per glidepar og fortegnet på rotasjonsvinkelen θ. De avgjøres empirisk av valideringstesten i §8.2, loggføres i `DECISIONS.md` og hardkodes deretter.
@@ -53,8 +54,6 @@ tests/
   fixtures/              # testformer (JSON), genereres av en testhjelper
 bench/
   Escherize.Bench/       # BenchmarkDotNet (valgfritt, fase F4)
-docs/
-  1912.09605.pdf
 DECISIONS.md
 SPEC.md
 ```

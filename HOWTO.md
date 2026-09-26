@@ -8,7 +8,7 @@ valg som ble tatt underveis; dette dokumentet handler bare om hvordan du får ut
 ## 0. Bygg én gang
 
 ```powershell
-cd E:\Prosjekter\Claude\Omnigon
+cd <der-du-klonet-repoet>
 .\build.ps1
 ```
 
@@ -21,7 +21,8 @@ src\Escherize.Cli\bin\Release\net8.0\escherize.dll
 Kjør det med `dotnet`. Lag gjerne en snarvei så resten blir kortere å skrive:
 
 ```powershell
-function escherize { dotnet E:\Prosjekter\Claude\Omnigon\src\Escherize.Cli\bin\Release\net8.0\escherize.dll @args }
+$esc = Resolve-Path .\src\Escherize.Cli\bin\Release\net8.0\escherize.dll
+function escherize { dotnet $esc @args }
 ```
 
 Alle eksemplene under antar den funksjonen.

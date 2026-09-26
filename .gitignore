@@ -23,3 +23,6 @@ out/
 
 # BenchmarkDotNet output
 BenchmarkDotNet.Artifacts/
+
+# Artikler lastes ned lokalt, ikke versjonert (se SPEC.md §0)
+docs/*.pdf
