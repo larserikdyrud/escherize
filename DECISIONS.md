@@ -123,7 +123,7 @@ the vertices at all, leaving only the single translation pair.
    5 per cent it reads as, and the same measurement gives 112 to 196 simple draws out of
    200 for valid configurations while the invalid ones stay at 0 to 30. Both readings pick
    the same winners; only the scaled one does so reliably, so that is what is implemented.
-2. **A redraw is a whole redraw.** "Trekk på nytt ved selvkryssing" is taken to repeat
+2. **A redraw is a whole redraw.** "Draw again on self-intersection" is taken to repeat
    steps 1 and 2 together, so each attempt draws a fresh k vector, goal and noise vector.
    Keeping the k vector fixed can make a trial hopeless, because a very lopsided k such as
    [2, 2, 26] puts 26 interior points on one edge and practically always folds.
@@ -286,41 +286,42 @@ On a 256 by 256 cat silhouette at n = 36, weighting the two ears with weight 8 a
 4.43 per cent, but whose weighted error is 3.40 per cent: the ears come out sharper and the
 body a little looser, which is the trade the flag exists to make.
 
-### 2026-09-25 - Etter F5: verify og STL
+### 2026-09-25 - After F5: verify and STL
 
-To ting utenfor spesifikasjonen, bedt om av brukeren: en måte å bekrefte at en konkret
-flis tiler, og eksport til 3D-print.
+Two things outside the specification, asked for by the user: a way to confirm that one
+concrete tile tiles, and export for 3D printing.
 
-- **`verify`-kommandoen** bygger opp en kandidat fra `summary.json` og kjører testen fra
-  SPEC §8.2 på den. Den svarer på spørsmålet for akkurat den flisen, ikke for typen
-  generelt.
-- **`StlWriter`** trianguleres med ørklipping og ekstruderes. Ørklipping fordi en flis kan
-  være sterkt konkav; en vifte fra ett hjørne ville gitt trekanter utenfor omrisset.
-  Resultatet er vanntett, som er det en skjærer trenger, og det er testet direkte: hver
-  kant må deles av nøyaktig to trekanter, og hver normal må peke bort fra tyngdepunktet.
+- **The `verify` command** rebuilds a candidate from `summary.json` and runs the test of
+  SPEC §8.2 on it. It answers the question for that particular tile rather than for the
+  type in general.
+- **`StlWriter`** triangulates by ear clipping and extrudes. Ear clipping because a tile can
+  be strongly concave; a fan from one corner would produce triangles outside the outline.
+  The result is watertight, which is what a slicer needs, and that is tested directly: every
+  edge must be shared by exactly two triangles, and every normal must point away from the
+  centroid.
 
-**To feil i min egen første `verify`, begge funnet på Norge:**
+**Two faults in the first version of `verify`, both found on Norway:**
 
-1. `CheckEdgeCoverage` bygget naboisometriene på nytt fra omrisset. For en glideflis er det
-   feil, og det er noe jeg selv skrev ned under F3: en gliderelasjon er uttrykt mot en fast
-   akse, så isometrien kan ikke gjenskapes fra punkter som er rotert. Den roterte flisen må
-   sende med sine egne, konjugerte isometrier. IH5 ga kantfeil 3.0e-01 før fiksen og
-   6.2e-17 etter.
-2. Dekningstesten trakk punkter i en disk med radius 2·R_flis, slik SPEC §8.2 sier. Det
-   passer for de runde flisene valideringen selv genererer, men ikke for en flis tilpasset
-   en lang, tynn form: radiusen er halve lengden, mens lappen vokser langs aksen, så disken
-   rekker langt utenfor lappen og hvert punkt der ute ser ut som et hull. Norge feilet på
-   dette selv om tilingen var riktig.
+1. `CheckEdgeCoverage` rebuilt the neighbour isometries from the outline. That is wrong for
+   a glide tile, and it is something recorded here during F3: a glide relation is stated
+   against a fixed axis, so the isometry cannot be reconstructed from points that have been
+   turned. A turned tile has to pass its own conjugated isometries. IH5 gave an edge error
+   of 3.0e-01 before the fix and 6.2e-17 after.
+2. The covering test sampled points in a disc of radius 2·R_tile, as SPEC §8.2 says. That
+   suits the round tiles validation generates itself, but not a tile fitted to a long thin
+   shape: the radius is half the length while the patch grows along the axis, so the disc
+   reaches far outside the patch and every point out there looks like a hole. Norway failed
+   on this even though the tiling was correct.
 
-Punkt 2 er rettet ved å stille de to spørsmålene hver for seg, og ingen av dem avhenger av
-hvor langt lappen rekker:
+The second is fixed by asking the two questions separately, neither of which depends on how
+far the patch reaches:
 
-- **Overlapp** finnes ved å trekke punkter. Det kan ikke være et artefakt: dekker to fliser
-  samme punkt, er tilingen ødelagt uansett hvordan lappen ser ut.
-- **Hull** finnes ved å telle kanter, med samme argument som lukker en flate: deles hver
-  kant av hver flis som har full naboring med nøyaktig én annen flis, er det ingen steder
-  et hull kan være.
+- **Overlaps** are found by sampling. That cannot be an artefact: if two tiles cover the
+  same point, the tiling is broken whatever the patch looks like.
+- **Gaps** are found by counting edges, on the argument that closes a surface: if every edge
+  of every tile that has a complete ring of neighbours is shared with exactly one other
+  tile, there is nowhere for a gap to be.
 
-Dette erstatter også den gamle dekningstesten i valideringen av SPEC §8.2. Testen er minst
-like streng: alle ni typene består fortsatt med 20 seeds hver, og alle de ni forkastede
-konfigurasjonene feiler fortsatt, nå på overlapp i stedet for på manglende dekning.
+This also replaces the old covering test in the validation of SPEC §8.2. The test is at
+least as strict: all nine types still pass with 20 seeds each, and all nine rejected
+configurations still fail, now on overlap rather than on missing coverage.

@@ -1,8 +1,8 @@
 # Escherize
 
-- Spesifikasjonen er SPEC.md; empiriske valg står i DECISIONS.md.
-- Jobb fase for fase (SPEC §10). Kjør ./build.ps1 før hver commit.
-- Endre aldri toleranser eller tester for å få grønt – stopp og spør.
-- Escherize.Core skal kun bruke BCL. Nye pakker krever godkjenning.
-- Hot path (SPEC §6.3): ingen allokering, ingen LINQ.
+- The specification is SPEC.md; empirical choices are in DECISIONS.md.
+- Work phase by phase (SPEC §10). Run ./build.ps1 before every commit.
+- Never change tolerances or tests to get green – stop and ask.
+- Escherize.Core uses the BCL only. New packages need approval.
+- Hot path (SPEC §6.3): no allocation, no LINQ.
 - Target: net8.0 (Visual Studio 2022).
